@@ -29,8 +29,8 @@ Notes:
 
     1. Update the `version` number and changelog in `metadata.txt`. 
 
-    2. Run the release script from the OSGeo4W Shell 
-       in the plugin directory using the following commands:
+    2. Run the release script from the OSGeo4W Shell in the plugin directory 
+       using the following commands:
        
       `cd **PATH_TO_PLUGIN**`
       `python release.py`
