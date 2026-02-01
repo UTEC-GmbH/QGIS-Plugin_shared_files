@@ -1,0 +1,42 @@
+name: Sync Shared Files
+on:
+  push:
+    branches: [ main ]
+
+jobs:
+  sync-files:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        repo: ['UTEC-GmbH/QGIS-Plugin_Layer_Tools', 'UTEC-GmbH/QGIS-Plugin_FW_Massenermittlung', 'UTEC-GmbH/QGIS-Plugin_DHN']
+    
+    steps:
+      - name: Checkout SOT Repo (shared files)
+        uses: actions/checkout@v4
+      
+      - name: Sync and Merge to Destinations
+        env:
+          API_TOKEN_GITHUB: ${{ secrets.SYNC_TOKEN }}
+        run: |
+          # 1. Setup Git identity
+          git config --global user.name "SOT-Bot"
+          git config --global user.email "actions@github.com"
+
+          # 2. Clone destination
+          git clone https://x-access-token:${API_TOKEN_GITHUB}@github.com/${{ matrix.repo }}.git dest_repo
+
+          # 3. Sync everything from SOT root to dest_repo root
+          # --exclude='.git': Protects the destination's history
+          # --exclude='.github': Protects the destination's own Actions/Workflows
+          
+          rsync -av --exclude='.git' --exclude='.github' ./ dest_repo/
+
+          # 4. Commit and Push
+          cd dest_repo
+          git add .
+          if git diff-index --quiet HEAD; then
+            echo "No changes detected for ${{ matrix.repo }}"
+          else
+            git commit -m "Sync: All files updated from Source of Truth"
+            git push origin main
+          fi
