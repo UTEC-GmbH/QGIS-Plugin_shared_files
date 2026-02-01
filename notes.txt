@@ -37,5 +37,5 @@ Notes:
       `python release.py`
        
       This script will update `plugins.xml` and package the new .zip file.
-      The .zip file and plugins.xml will be saved to the shared repo 
+      The .zip file and plugins.xml will be saved to the server 
       (see `download_url_base` in metadata.txt).
