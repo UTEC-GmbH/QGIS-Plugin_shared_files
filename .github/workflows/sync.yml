@@ -29,10 +29,12 @@ jobs:
           # --exclude='.git': Protects the destination's history
           # --exclude='.github': Protects the destination's own Actions/Workflows
           
-          rsync -av --exclude='.git' --exclude='.github' ./ dest_repo/
+          rsync -av --exclude='.git' --exclude='.github' --exclude='dest_repo' ./ dest_repo/
 
           # 4. Commit and Push
           cd dest_repo
+          # Remove the accidental nested folder if it exists
+          rm -rf dest_repo
           git add .
           if git diff-index --quiet HEAD; then
             echo "No changes detected for ${{ matrix.repo }}"
