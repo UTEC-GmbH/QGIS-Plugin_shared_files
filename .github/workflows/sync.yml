@@ -33,12 +33,10 @@ jobs:
 
           # 4. Commit and Push
           cd dest_repo
-          # Remove the accidental nested folder if it exists
-          rm -rf dest_repo
           git add .
           if git diff-index --quiet HEAD; then
             echo "No changes detected for ${{ matrix.repo }}"
           else
-            git commit -m "Sync: All files updated from Source of Truth"
+            git commit -m "SOT-Bot: updated from shared_files repo"
             git push origin main
           fi
