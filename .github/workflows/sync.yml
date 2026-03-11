@@ -4,16 +4,42 @@ on:
     branches: [ main ]
 
 jobs:
+  test-release-script:
+    name: Test Release Script
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout SOT Repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r tests/requirements-dev.txt
+
+      - name: Run tests
+        run: pytest tests/
+
   sync-files:
+    name: Sync to Destination Repos
+    needs: test-release-script # Run only if tests pass
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        repo: ['UTEC-GmbH/QGIS-Plugin_Layer_Tools', 'UTEC-GmbH/QGIS-Plugin_FW_Massenermittlung', 'UTEC-GmbH/QGIS-Plugin_DHN']
-    
+        repo: [
+            "UTEC-GmbH/QGIS-Plugin_Layer_Tools",
+            "UTEC-GmbH/QGIS-Plugin_FW_Massenermittlung",
+            "UTEC-GmbH/QGIS-Plugin_DHN",
+          ]
+
     steps:
       - name: Checkout SOT Repo (shared files)
         uses: actions/checkout@v4
-      
+
       - name: Sync and Merge to Destinations
         env:
           API_TOKEN_GITHUB: ${{ secrets.SYNC_TOKEN }}
@@ -28,8 +54,8 @@ jobs:
           # 3. Sync everything from SOT root to dest_repo root
           # --exclude='.git': Protects the destination's history
           # --exclude='.github': Protects the destination's own Actions/Workflows
-          
-          rsync -av --exclude='.git' --exclude='.github' --exclude='dest_repo' ./ dest_repo/
+          # --exclude='tests': Excludes test files
+          rsync -av --exclude='.git' --exclude='.github' --exclude='dest_repo' --exclude='tests' ./ dest_repo/
 
           # 4. Commit and Push
           cd dest_repo
