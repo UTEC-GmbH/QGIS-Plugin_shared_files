@@ -40,24 +40,24 @@ jobs:
       - name: Checkout SOT Repo (shared files)
         uses: actions/checkout@v4
 
+      - name: Checkout Destination Repo
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ matrix.repo }}
+          token: ${{ secrets.SYNC_TOKEN }}
+          path: dest_repo
+          persist-credentials: true
+
       - name: Sync and Merge to Destinations
-        env:
-          API_TOKEN_GITHUB: ${{ secrets.SYNC_TOKEN }}
         run: |
           # 1. Setup Git identity
           git config --global user.name "SOT-Bot"
           git config --global user.email "actions@github.com"
 
-          # 2. Clone destination
-          git clone https://x-access-token:${API_TOKEN_GITHUB}@github.com/${{ matrix.repo }}.git dest_repo
-
-          # 3. Sync everything from SOT root to dest_repo root
-          # --exclude='.git': Protects the destination's history
-          # --exclude='.github': Protects the destination's own Actions/Workflows
-          # --exclude='tests': Excludes test files
+          # 2. Sync everything from SOT root to dest_repo root
           rsync -av --exclude='.git' --exclude='.github' --exclude='dest_repo' --exclude='tests' ./ dest_repo/
 
-          # 4. Commit and Push
+          # 3. Commit and Push
           cd dest_repo
           git add .
           if git diff-index --quiet HEAD; then
