@@ -23,6 +23,7 @@ from typing import TypedDict
 from xml.etree.ElementTree import Element, ElementTree, SubElement
 
 try:
+    # pyrefly: ignore[untyped-import]
     from defusedxml import ElementTree as DefET
 except ImportError:
     print("\nError: The 'defusedxml' library is missing.")
@@ -174,7 +175,8 @@ def _load_or_create_xml_tree(xml_path: Path) -> tuple[ElementTree, Element]:
         logger.info("Reading master repository file: %s", xml_path)
         try:
             tree: ElementTree = DefET.parse(xml_path)
-            root: Element = tree.getroot()  # pyright: ignore[reportAssignmentType]
+            # pyrefly: ignore[bad-assignment]
+            root: Element = tree.getroot()
         except DefET.ParseError as e:
             msg: str = f"Error parsing {xml_path}."
             logger.exception("❌ %s", msg)
@@ -321,6 +323,7 @@ def update_repository_file(metadata: PluginMetadata, output_dir: Path) -> None:
 
     Args:
         metadata: A dictionary containing the plugin's core metadata.
+        output_dir: The local directory where repository files are published.
 
     Raises:
         ReleaseScriptError: If any step in the process fails.
