@@ -53,32 +53,31 @@ def temp_plugin_dir(tmp_path: Path) -> Path:
 
 
 @pytest.fixture
-def shared_repo_dir(tmp_path: Path) -> Path:
-    """Create a temporary shared repository directory.
+def release_repo_dir(tmp_path: Path) -> Path:
+    """Create a temporary release repository directory.
 
     Args:
         tmp_path: The pytest temporary path fixture.
 
     Returns:
-        The path to the created temporary shared repository directory.
+        The path to the created temporary release repository directory.
     """
-    repo_dir: Path = tmp_path / "shared_repo"
-    repo_dir.mkdir()
+    repo_dir: Path = tmp_path / "release_repo" / "docs"
+    repo_dir.mkdir(parents=True)
     return repo_dir
 
 
 @pytest.fixture
-def metadata_path(temp_plugin_dir: Path, shared_repo_dir: Path) -> Path:
+def metadata_path(temp_plugin_dir: Path) -> Path:
     """Create a metadata.txt file and return its path.
 
     Args:
         temp_plugin_dir: The temporary plugin directory.
-        shared_repo_dir: The temporary shared repository directory.
 
     Returns:
         The path to the created metadata.txt file.
     """
-    metadata_content: str = textwrap.dedent(f"""
+    metadata_content: str = textwrap.dedent("""
         [general]
         name = My Test Plugin
         version = 1.0.0
@@ -95,7 +94,7 @@ def metadata_path(temp_plugin_dir: Path, shared_repo_dir: Path) -> Path:
         author = Test Author
         email = test@example.com
         icon=resources/icons/main_icon.svg
-        download_url_base=file:////{shared_repo_dir}
+        download_url_base=https://example.github.io/QGIS-Plugin-Releases
 
 
         [release]
@@ -146,13 +145,13 @@ def test_get_plugin_metadata_file_not_found() -> None:
 
 
 def test_update_repository_create_new_xml(
-    shared_repo_dir: Path, metadata_path: Path
+    release_repo_dir: Path, metadata_path: Path
 ) -> None:
     """Test creating a new plugins.xml file."""
     metadata = get_plugin_metadata()
-    update_repository_file(metadata)
+    update_repository_file(metadata, release_repo_dir)
 
-    xml_path: Path = shared_repo_dir / "plugins.xml"
+    xml_path: Path = release_repo_dir / "plugins.xml"
     assert xml_path.exists()
 
     tree = parse(xml_path)
@@ -167,12 +166,12 @@ def test_update_repository_create_new_xml(
 
 
 def test_update_repository_update_existing_plugin(
-    shared_repo_dir: Path, metadata_path: Path
+    release_repo_dir: Path, metadata_path: Path
 ) -> None:
     """Test updating an existing plugin entry in plugins.xml."""
     # 1. Create initial plugins.xml with version 1.0.0
     metadata_v1 = get_plugin_metadata()
-    update_repository_file(metadata_v1)
+    update_repository_file(metadata_v1, release_repo_dir)
 
     # 2. Update metadata.txt to version 1.1.0
     with metadata_path.open("r+", encoding="utf-8") as f:
@@ -185,10 +184,10 @@ def test_update_repository_update_existing_plugin(
     # 3. Run update again with new metadata
     metadata_v2 = get_plugin_metadata()
     assert metadata_v2["version"] == "1.1.0"
-    update_repository_file(metadata_v2)
+    update_repository_file(metadata_v2, release_repo_dir)
 
     # 4. Verify the update
-    xml_path: Path = shared_repo_dir / "plugins.xml"
+    xml_path: Path = release_repo_dir / "plugins.xml"
     tree = parse(xml_path)
     plugin_node = tree.getroot().find("pyqgis_plugin[@name='My Test Plugin']")
     assert plugin_node is not None
@@ -197,7 +196,7 @@ def test_update_repository_update_existing_plugin(
 
 
 def test_update_repository_adds_second_plugin(
-    shared_repo_dir: Path, metadata_path: Path
+    release_repo_dir: Path, metadata_path: Path
 ) -> None:
     """Test adding a second plugin to an existing plugins.xml.
 
@@ -213,15 +212,15 @@ def test_update_repository_adds_second_plugin(
     metadata_first["version"] = "0.5.0"
     metadata_first["description"] = "Description for first plugin"
 
-    update_repository_file(metadata_first)
+    update_repository_file(metadata_first, release_repo_dir)
 
     # 2. Add the second plugin (the one actually defined in metadata.txt)
     metadata_second = get_plugin_metadata()
-    update_repository_file(metadata_second)
+    update_repository_file(metadata_second, release_repo_dir)
 
     # 3. Verify both plugins are now in the XML and the first is intact.
     # The ability to parse the file is the first check for well-formedness.
-    xml_path = shared_repo_dir / "plugins.xml"
+    xml_path = release_repo_dir / "plugins.xml"
     tree = parse(xml_path)
     root = tree.getroot()
     plugins = root.findall("pyqgis_plugin")
@@ -243,7 +242,7 @@ def test_update_repository_adds_second_plugin(
 
 
 def test_plugins_xml_structure_completeness(
-    shared_repo_dir: Path, metadata_path: Path
+    release_repo_dir: Path, metadata_path: Path
 ) -> None:
     """Test that the generated XML entry contains all required QGIS repository tags.
 
@@ -251,9 +250,9 @@ def test_plugins_xml_structure_completeness(
     <description>, etc., are correctly populated in the plugins.xml file.
     """
     metadata = get_plugin_metadata()
-    update_repository_file(metadata)
+    update_repository_file(metadata, release_repo_dir)
 
-    xml_path: Path = shared_repo_dir / "plugins.xml"
+    xml_path: Path = release_repo_dir / "plugins.xml"
     tree = parse(xml_path)
     plugin_node = tree.getroot().find("pyqgis_plugin")
 
@@ -286,17 +285,21 @@ def test_plugins_xml_structure_completeness(
 
     download_url = plugin_node.find("download_url")
     assert download_url is not None
-    assert download_url.text.endswith("/My_Test_Plugin.zip")
+    assert (
+        download_url.text
+        == "https://example.github.io/QGIS-Plugin-Releases/My_Test_Plugin.zip"
+    )
+    assert str(release_repo_dir) not in download_url.text
 
 
 def test_package_plugin_creates_zip_correctly(
-    shared_repo_dir: Path, metadata_path: Path
+    release_repo_dir: Path, metadata_path: Path
 ) -> None:
     """Test that package_plugin creates a zip file with correct contents."""
     metadata = get_plugin_metadata()
-    package_plugin(metadata)
+    package_plugin(metadata, release_repo_dir)
 
-    zip_path: Path = shared_repo_dir / "My_Test_Plugin.zip"
+    zip_path: Path = release_repo_dir / "My_Test_Plugin.zip"
     assert zip_path.exists()
 
     with zipfile.ZipFile(zip_path, "r") as zf:
@@ -324,7 +327,7 @@ def test_package_plugin_creates_zip_correctly(
 
 
 def test_run_release_process_removes_dev_marker(
-    shared_repo_dir: Path, metadata_path: Path, mocker
+    release_repo_dir: Path, metadata_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Test that the full release process removes the (dev) marker."""
     with metadata_path.open("r+", encoding="utf-8") as f:
@@ -336,19 +339,19 @@ def test_run_release_process_removes_dev_marker(
         f.write(content)
         f.truncate()
 
-    mocker.patch("release.compile_translations")
+    monkeypatch.setattr("release.compile_translations", lambda _metadata: None)
 
-    run_release_process()
+    run_release_process(release_repo_dir)
 
     # Check plugins.xml for clean name
-    xml_path: Path = shared_repo_dir / "plugins.xml"
+    xml_path: Path = release_repo_dir / "plugins.xml"
     tree = parse(xml_path)
     plugin_node = tree.find("pyqgis_plugin[@name='My Test Plugin']")
     assert plugin_node is not None
     assert tree.find("pyqgis_plugin[@name='My Test Plugin (dev)']") is None
 
     # Check metadata.txt inside zip for clean name
-    zip_path: Path = shared_repo_dir / "My_Test_Plugin.zip"
+    zip_path: Path = release_repo_dir / "My_Test_Plugin.zip"
     assert zip_path.exists()
     with zipfile.ZipFile(zip_path, "r") as zf:
         with zf.open("My_Test_Plugin/metadata.txt") as meta_in_zip:
@@ -357,7 +360,9 @@ def test_run_release_process_removes_dev_marker(
             assert "(dev)" not in content
 
 
-def test_package_plugin_name_mismatch(metadata_path: Path) -> None:
+def test_package_plugin_name_mismatch(
+    metadata_path: Path, release_repo_dir: Path
+) -> None:
     """Test that packaging fails if plugin_package_name is incorrect."""
     with metadata_path.open("r+", encoding="utf-8") as f:
         content = f.read()
@@ -371,4 +376,4 @@ def test_package_plugin_name_mismatch(metadata_path: Path) -> None:
 
     metadata = get_plugin_metadata()
     with pytest.raises(ReleaseScriptError, match="Name mismatch"):
-        package_plugin(metadata)
+        package_plugin(metadata, release_repo_dir)
