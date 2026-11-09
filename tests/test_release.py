@@ -1,6 +1,7 @@
 """Tests for the release.py script."""
 
 import os
+import subprocess
 import textwrap
 import zipfile
 from pathlib import Path
@@ -10,7 +11,9 @@ import pytest
 
 from release import (
     ReleaseScriptError,
+    commit_release_changes,
     get_plugin_metadata,
+    main,
     package_plugin,
     run_release_process,
     update_repository_file,
@@ -358,6 +361,182 @@ def test_run_release_process_removes_dev_marker(
             content = meta_in_zip.read().decode("utf-8")
             assert "name = My Test Plugin" in content
             assert "(dev)" not in content
+
+
+def test_commit_release_changes_commits_only_release_files(
+    release_repo_dir: Path, metadata_path: Path
+) -> None:
+    """Commit release outputs without including unrelated staged changes."""
+    repo_dir = release_repo_dir.parent
+    subprocess.run(["git", "init"], cwd=repo_dir, check=True, capture_output=True)
+    subprocess.run(
+        ["git", "config", "user.name", "Release Test"],
+        cwd=repo_dir,
+        check=True,
+    )
+    subprocess.run(
+        ["git", "config", "user.email", "release-test@example.com"],
+        cwd=repo_dir,
+        check=True,
+    )
+
+    unrelated_file = repo_dir / "unrelated.txt"
+    unrelated_file.write_text("unrelated", encoding="utf-8")
+    (release_repo_dir / "My_Test_Plugin.zip").write_bytes(b"plugin")
+    (release_repo_dir / "plugins.xml").write_text("<plugins />", encoding="utf-8")
+    subprocess.run(
+        ["git", "add", "unrelated.txt"],
+        cwd=repo_dir,
+        check=True,
+    )
+
+    commit_release_changes(get_plugin_metadata(), release_repo_dir)
+
+    committed_files = subprocess.run(
+        ["git", "show", "--pretty=format:", "--name-only", "HEAD"],
+        cwd=repo_dir,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.splitlines()
+    assert set(committed_files) == {
+        "docs/My_Test_Plugin.zip",
+        "docs/plugins.xml",
+    }
+    assert subprocess.run(
+        ["git", "diff", "--cached", "--name-only"],
+        cwd=repo_dir,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.splitlines() == ["unrelated.txt"]
+
+
+def test_commit_release_changes_requires_git_repository(
+    tmp_path: Path, metadata_path: Path
+) -> None:
+    """Fail clearly when the output directory is not in a Git repository."""
+    output_dir = tmp_path / "not_a_repo"
+    output_dir.mkdir()
+
+    with pytest.raises(ReleaseScriptError, match="not inside a Git repository"):
+        commit_release_changes(get_plugin_metadata(), output_dir)
+
+
+def test_commit_release_changes_pushes_to_configured_upstream(
+    tmp_path: Path, release_repo_dir: Path, metadata_path: Path
+) -> None:
+    """Commit generated files and push the release branch to its upstream."""
+    repo_dir = release_repo_dir.parent
+    remote_dir = tmp_path / "release_remote.git"
+    subprocess.run(
+        ["git", "init", "--bare", "--initial-branch=main", str(remote_dir)],
+        check=True,
+        capture_output=True,
+    )
+    subprocess.run(
+        ["git", "init", "--initial-branch=main"],
+        cwd=repo_dir,
+        check=True,
+        capture_output=True,
+    )
+    subprocess.run(
+        ["git", "config", "user.name", "Release Test"],
+        cwd=repo_dir,
+        check=True,
+    )
+    subprocess.run(
+        ["git", "config", "user.email", "release-test@example.com"],
+        cwd=repo_dir,
+        check=True,
+    )
+    (repo_dir / "README.txt").write_text("release repository", encoding="utf-8")
+    subprocess.run(["git", "add", "README.txt"], cwd=repo_dir, check=True)
+    subprocess.run(
+        ["git", "commit", "-m", "Initial commit"],
+        cwd=repo_dir,
+        check=True,
+        capture_output=True,
+    )
+    subprocess.run(
+        ["git", "remote", "add", "origin", str(remote_dir)],
+        cwd=repo_dir,
+        check=True,
+    )
+    subprocess.run(
+        ["git", "push", "--set-upstream", "origin", "main"],
+        cwd=repo_dir,
+        check=True,
+        capture_output=True,
+    )
+
+    (release_repo_dir / "My_Test_Plugin.zip").write_bytes(b"plugin")
+    (release_repo_dir / "plugins.xml").write_text("<plugins />", encoding="utf-8")
+    commit_release_changes(get_plugin_metadata(), release_repo_dir, push=True)
+
+    remote_files = subprocess.run(
+        [
+            "git",
+            "--git-dir",
+            str(remote_dir),
+            "show",
+            "main:docs/plugins.xml",
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    assert remote_files.stdout == "<plugins />"
+
+
+@pytest.mark.parametrize(
+    ("menu_input", "expected_output_dir", "expected_commit", "expected_push"),
+    [
+        (["1"], Path(r"C:\Github_Repos\QGIS-Plugin-Releases\docs"), False, False),
+        (["2", r"C:\custom release docs"], Path(r"C:\custom release docs"), False, False),
+        (["3"], Path(r"C:\Github_Repos\QGIS-Plugin-Releases\docs"), True, False),
+        (["4"], Path(r"C:\Github_Repos\QGIS-Plugin-Releases\docs"), False, True),
+    ],
+)
+def test_main_menu_selects_release_options(
+    monkeypatch: pytest.MonkeyPatch,
+    menu_input: list[str],
+    expected_output_dir: Path,
+    expected_commit: bool,
+    expected_push: bool,
+) -> None:
+    """Map interactive menu choices to the corresponding release settings."""
+    received: dict[str, object] = {}
+
+    def fake_run_release_process(
+        output_dir: Path, *, commit: bool = False, push: bool = False
+    ) -> None:
+        received["output_dir"] = output_dir
+        received["commit"] = commit
+        received["push"] = push
+
+    monkeypatch.setattr("release.run_release_process", fake_run_release_process)
+    monkeypatch.setattr("sys.argv", ["release.py"])
+    inputs = iter(menu_input)
+    monkeypatch.setattr("builtins.input", lambda _prompt: next(inputs))
+
+    assert main() == 0
+    assert received == {
+        "output_dir": expected_output_dir,
+        "commit": expected_commit,
+        "push": expected_push,
+    }
+
+
+def test_main_menu_quit_does_not_run_release(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Quit the menu without starting a release."""
+    monkeypatch.setattr("release.run_release_process", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr("sys.argv", ["release.py"])
+    monkeypatch.setattr("builtins.input", lambda _prompt: "q")
+
+    assert main() == 0
 
 
 def test_package_plugin_name_mismatch(
