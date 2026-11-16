@@ -125,6 +125,7 @@ def metadata_path(temp_plugin_dir: Path) -> Path:
 
 
 @pytest.fixture(autouse=True)
+# pyrefly: ignore[bad-return]
 def change_test_dir(temp_plugin_dir: Path) -> None:
     """Change CWD to the temporary plugin directory for test execution."""
     original_dir: Path = Path.cwd()
@@ -285,6 +286,7 @@ def test_plugins_xml_structure_completeness(
     # 3. Check tags with variable content separately
     changelog = plugin_node.find("changelog")
     assert changelog is not None
+    # pyrefly: ignore[not-iterable]
     assert "Version 1.0.0" in changelog.text
 
     download_url = plugin_node.find("download_url")
@@ -373,8 +375,8 @@ def test_run_git_command_finds_standard_windows_install(
     git_executable.touch()
 
     monkeypatch.setattr("release.shutil.which", lambda _name: None)
-    monkeypatch.setenv("ProgramFiles", str(tmp_path))
-    monkeypatch.delenv("ProgramFiles(x86)", raising=False)
+    monkeypatch.setenv("PROGRAMFILES", str(tmp_path))
+    monkeypatch.delenv("PROGRAMFILES(X86)", raising=False)
     monkeypatch.delenv("LOCALAPPDATA", raising=False)
 
     commands: list[list[str]] = []
@@ -522,7 +524,12 @@ def test_commit_release_changes_pushes_to_configured_upstream(
     ("menu_input", "expected_output_dir", "expected_commit", "expected_push"),
     [
         (["1"], Path(r"C:\Github_Repos\QGIS-Plugin-Releases\docs"), False, False),
-        (["2", r"C:\custom release docs"], Path(r"C:\custom release docs"), False, False),
+        (
+            ["2", r"C:\custom release docs"],
+            Path(r"C:\custom release docs"),
+            False,
+            False,
+        ),
         (["3"], Path(r"C:\Github_Repos\QGIS-Plugin-Releases\docs"), True, False),
         (["4"], Path(r"C:\Github_Repos\QGIS-Plugin-Releases\docs"), False, True),
     ],
