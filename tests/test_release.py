@@ -11,6 +11,7 @@ import pytest
 
 from release import (
     ReleaseScriptError,
+    _run_git_command,
     commit_release_changes,
     get_plugin_metadata,
     main,
@@ -361,6 +362,34 @@ def test_run_release_process_removes_dev_marker(
             content = meta_in_zip.read().decode("utf-8")
             assert "name = My Test Plugin" in content
             assert "(dev)" not in content
+
+
+def test_run_git_command_finds_standard_windows_install(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Find Git in its standard install directory when it is missing from PATH."""
+    git_executable = tmp_path / "Git" / "cmd" / "git.exe"
+    git_executable.parent.mkdir(parents=True)
+    git_executable.touch()
+
+    monkeypatch.setattr("release.shutil.which", lambda _name: None)
+    monkeypatch.setenv("ProgramFiles", str(tmp_path))
+    monkeypatch.delenv("ProgramFiles(x86)", raising=False)
+    monkeypatch.delenv("LOCALAPPDATA", raising=False)
+
+    commands: list[list[str]] = []
+
+    def fake_run(
+        command: list[str], **_kwargs: object
+    ) -> subprocess.CompletedProcess[str]:
+        commands.append(command)
+        return subprocess.CompletedProcess(command, 0, "", "")
+
+    monkeypatch.setattr("release.subprocess.run", fake_run)
+
+    _run_git_command(["--version"], tmp_path)
+
+    assert commands == [[str(git_executable), "--version"]]
 
 
 def test_commit_release_changes_commits_only_release_files(
